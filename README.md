@@ -1,11 +1,11 @@
 # Attack Surface Visualizer
 
 Attack Surface Visualizer is a local, read-only Windows security assessment tool
-that helps users understand how exposed their system is from an attacker's
+designed to help users understand how exposed their system is from an attacker’s
 perspective.
 
-The tool does not perform exploitation, scanning, or configuration changes.
-It only inspects system settings and reports potential exposure points.
+It does **not** perform exploitation, scanning, or configuration changes.
+It only inspects existing system settings and reports potential exposure signals.
 
 ---
 
