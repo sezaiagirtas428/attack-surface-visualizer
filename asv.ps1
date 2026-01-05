@@ -47,15 +47,106 @@ try {
     Write-Host "[?] RDP: UNKNOWN (Registry access denied or key missing)" -ForegroundColor Yellow
 }
 Write-Host ""
-# --- Test 4: SMBv1 ---
-try {
-    $smb1 = Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -ErrorAction Stop
-    if ($smb1.State -eq "Enabled") {
+function Get-DismFeatureState {
+    param([Parameter(Mandatory=$true)][string]$FeatureName)
+
+    try {
+        $out = & dism.exe /Online /Get-FeatureInfo /FeatureName:$FeatureName 2>$null
+        if (-not $out) { return $null }
+
+        $line = ($out | Select-String -Pattern "State\s*:\s*" | Select-Object -First 1).ToString()
+        if (-not $line) { return $null }
+
+        return ($line -split ":\s*", 2)[1].Trim()
+    } catch {
+        return $null
+    }
+}
+
+# --- Test 4: SMBv1 (DISM) ---
+$stateSmb1 = Get-DismFeatureState -FeatureName "SMB1Protocol"
+if ($stateSmb1) {
+    if ($stateSmb1 -eq "Enabled") {
         Write-Host "[!] SMBv1: ENABLED (legacy and high risk)" -ForegroundColor Red
     } else {
         Write-Host "[+] SMBv1: DISABLED" -ForegroundColor Green
     }
-} catch {
-    Write-Host "[?] SMBv1: UNKNOWN (feature query failed or access denied)" -ForegroundColor Yellow
+} else {
+    Write-Host "[?] SMBv1: UNKNOWN (DISM query failed)" -ForegroundColor Yellow
+}
+Write-Host ""
+
+# --- Test 5: PowerShell v2 (DISM) ---
+$statePSv2 = Get-DismFeatureState -FeatureName "MicrosoftWindowsPowerShellV2"
+if ($statePSv2) {
+    if ($statePSv2 -eq "Enabled") {
+        Write-Host "[!] PowerShell v2: ENABLED (legacy and risk for LOLBins)" -ForegroundColor Red
+    } else {
+        Write-Host "[+] PowerShell v2: DISABLED" -ForegroundColor Green
+    }
+} else {
+    Write-Host "[?] PowerShell v2: UNKNOWN (DISM query failed)" -ForegroundColor Yellow
+}
+Write-Host ""
+# --- Exposure Scoring (handles UNKNOWN safely) ---
+$score = 0
+$reasons = New-Object System.Collections.Generic.List[string]
+
+function Add-Risk {
+    param(
+        [int]$Points,
+        [string]$Reason
+    )
+    $script:score += $Points
+    $script:reasons.Add("$Reason (+$Points)") | Out-Null
+}
+
+# Network Discovery scoring
+if (Get-Variable -Name ndEnabledCount -Scope Script -ErrorAction SilentlyContinue) {
+    if ($ndEnabledCount -gt 0) { Add-Risk 2 "Network Discovery enabled" }
+} else {
+    Add-Risk 1 "Network Discovery state unknown"
+}
+
+# RDP scoring
+if (Get-Variable -Name rdp -Scope Script -ErrorAction SilentlyContinue) {
+    if ($rdp.fDenyTSConnections -eq 0) { Add-Risk 3 "RDP enabled" }
+} else {
+    Add-Risk 1 "RDP state unknown"
+}
+
+# SMBv1 scoring
+if (Get-Variable -Name stateSmb1 -Scope Script -ErrorAction SilentlyContinue) {
+    if ($stateSmb1 -eq "Enabled") { Add-Risk 4 "SMBv1 enabled" }
+    elseif (-not $stateSmb1) { Add-Risk 1 "SMBv1 state unknown" }
+} else {
+    Add-Risk 1 "SMBv1 state unknown"
+}
+
+# PowerShell v2 scoring
+if (Get-Variable -Name statePSv2 -Scope Script -ErrorAction SilentlyContinue) {
+    if ($statePSv2 -eq "Enabled") { Add-Risk 3 "PowerShell v2 enabled" }
+    elseif (-not $statePSv2) { Add-Risk 1 "PowerShell v2 state unknown" }
+} else {
+    Add-Risk 1 "PowerShell v2 state unknown"
+}
+
+Write-Host "---------------------------------"
+Write-Host " Exposure Score"
+Write-Host "---------------------------------"
+
+if ($reasons.Count -eq 0) {
+    Write-Host "No risk signals detected from the checks performed." -ForegroundColor Green
+} else {
+    foreach ($r in $reasons) { Write-Host " - $r" -ForegroundColor DarkGray }
+}
+
+Write-Host ""
+if ($score -ge 7) {
+    Write-Host "OVERALL EXPOSURE: HIGH" -ForegroundColor Red
+} elseif ($score -ge 4) {
+    Write-Host "OVERALL EXPOSURE: MEDIUM" -ForegroundColor Yellow
+} else {
+    Write-Host "OVERALL EXPOSURE: LOW" -ForegroundColor Green
 }
 Write-Host ""
