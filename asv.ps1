@@ -133,6 +133,17 @@ if (Get-Variable -Name statePSv2 -Scope Script -ErrorAction SilentlyContinue) {
 
 Write-Host "---------------------------------"
 Write-Host " Exposure Score"
+# LOLBins scoring
+if (Get-Variable -Name lolbins -Scope Script -ErrorAction SilentlyContinue) {
+    $present = 0
+    foreach ($b in $lolbins) { if (Test-Path $b.Path) { $present++ } }
+
+    if ($present -ge 3) { Add-Risk 2 "Multiple LOLBins present (certutil/bitsadmin/wmic)" }
+    elseif ($present -ge 1) { Add-Risk 1 "LOLBins present" }
+} else {
+    Add-Risk 1 "LOLBins not evaluated"
+}
+
 Write-Host "---------------------------------"
 
 if ($reasons.Count -eq 0) {
@@ -149,4 +160,24 @@ if ($score -ge 7) {
 } else {
     Write-Host "OVERALL EXPOSURE: LOW" -ForegroundColor Green
 }
+Write-Host ""
+# --- Test 6: LOLBins Availability ---
+Write-Host "---------------------------------"
+Write-Host " LOLBins Availability"
+Write-Host "---------------------------------"
+
+$lolbins = @(
+    @{ Name = "certutil";  Path = "$env:SystemRoot\System32\certutil.exe" },
+    @{ Name = "bitsadmin"; Path = "$env:SystemRoot\System32\bitsadmin.exe" },
+    @{ Name = "wmic";      Path = "$env:SystemRoot\System32\wbem\wmic.exe" }
+)
+
+foreach ($bin in $lolbins) {
+    if (Test-Path $bin.Path) {
+        Write-Host "[!] $($bin.Name): PRESENT (commonly abused LOLBin)" -ForegroundColor Yellow
+    } else {
+        Write-Host "[+] $($bin.Name): NOT PRESENT" -ForegroundColor Green
+    }
+}
+
 Write-Host ""
